@@ -1,0 +1,292 @@
+---
+title: "Predicting Stock Return Using Clustering and Logit"
+author: "Saeid Abolfazli (PhD)"
+date: "May 31, 2016"
+output: 
+  html_document: 
+    highlight: monochrome
+    number_sections: yes
+    theme: spacelab
+    toc: yes
+---
+
+```{r results='hide', message=FALSE, warning=FALSE, error=TRUE}
+library(Hmisc)
+```
+
+```{r}
+file <- file.path("data","stocksCluster.csv")
+stock<- read.csv(file)
+describe(stock)
+```
+
+#Problem 1.1 - Exploring the Dataset
+
+Load StocksCluster.csv into a data frame called "stocks". How many observations are in the dataset?
+
+**Answer:** 11580
+
+#Problem 1.2 - Exploring the Dataset
+
+
+What proportion of the observations have positive returns in December?
+
+```{r}
+table(stock$PositiveDec)/nrow(stock)
+```
+
+**Answer:**
+
+#Problem 1.3 - Exploring the Dataset
+What is the maximum correlation between any two return variables in the dataset? You should look at the pairwise correlations between ReturnJan, ReturnFeb, ReturnMar, ReturnApr, ReturnMay, ReturnJune, ReturnJuly, ReturnAug, ReturnSep, ReturnOct, and ReturnNov.
+
+Below we can eyebal to see the maximum correlation.
+
+```{r}
+round(cor(stock),5)
+```
+
+We can now have a simpler view of the correlations using below code
+
+```{r}
+tail(sort(abs(round(cor(stock),5))),15)
+```
+
+**Answer:** 0.19167
+
+#Problem 1.4 - Exploring the Dataset
+Which month (from January through November) has the largest mean return across all observations in the dataset?
+
+```{r}
+means <- sapply(stock, mean)
+sort(means)
+```
+
+**Answer:** April
+
+Which month (from January through November) has the smallest mean return across all observations in the dataset?
+
+**Answer:** September
+
+#Problem 2.1 - Initial Logistic Regression Model
+Run the following commands to split the data into a training set and testing set, putting 70% of the data in the training set and 30% of the data in the testing set:
+
+```{r}
+library(caTools)
+set.seed(144)
+
+spl = sample.split(stock$PositiveDec, SplitRatio = 0.7)
+
+stocksTrain = subset(stock, spl == TRUE)
+
+stocksTest = subset(stock, spl == FALSE)
+```
+
+Then, use the stocksTrain data frame to train a logistic regression model (name it StocksModel) to predict PositiveDec using all the other variables as independent variables. Don't forget to add the argument family=binomial to your glm command.
+
+What is the overall accuracy on the training set, using a threshold of 0.5?
+
+```{r}
+StocksModel <- glm(PositiveDec~., data = stocksTrain, family = "binomial")
+summary(StocksModel)
+
+trainPred <- predict(StocksModel, newdata = stocksTrain, type="response")
+table(stocksTrain$PositiveDec, trainPred >=0.5)
+acc <- (990 + 3640)/(990 + 3640 +787+2689)
+acc
+```
+
+**Answer:** 0.5711818
+
+#Problem 2.2 - Initial Logistic Regression Model
+Now obtain test set predictions from StocksModel. What is the overall accuracy of the model on the test, again using a threshold of 0.5?
+
+```{r}
+testPred <- predict(StocksModel, newdata= stocksTest, type="response")
+table(stocksTest$PositiveDec, testPred >= 0.5)
+acc <- (1553+417)/sum(table(stocksTest$PositiveDec, testPred >= 0.5))
+acc
+```
+
+**Answer:** 0.5670697
+
+#Problem 2.3 - Initial Logistic Regression Model
+
+What is the accuracy on the test set of a baseline model that always predicts the most common outcome (PositiveDec = 1)?
+
+```{r}
+table(stocksTest$PositiveDec)
+1897/ sum(table(stocksTest$PositiveDec))
+```
+**Answer:** 0.5460564
+
+#Problem 3.1 - Clustering Stocks
+Now, let's cluster the stocks. The first step in this process is to remove the dependent variable using the following commands:
+
+```{r}
+limitedTrain <- stocksTrain
+limitedTrain$PositiveDec <- NULL
+limitedTest <- stocksTest
+limitedTest$PositiveDec <- NULL
+```
+
+Why do we need to remove the dependent variable in the clustering phase of the cluster-then-predict methodology?
+
+**Answer:**  Needing to know the dependent variable value to assign an observation to a cluster defeats the purpose of the methodology
+
+#Problem 3.2 - Clustering Stocks
+In the market segmentation assignment in this week's homework, you were introduced to the preProcess command from the caret package, which normalizes variables by subtracting by the mean and dividing by the standard deviation.
+
+In cases where we have a training and testing set, we'll want to normalize by the mean and standard deviation of the variables in the training set. We can do this by passing just the training set to the preProcess function:
+
+```{r}
+library(caret)
+
+preproc = preProcess(limitedTrain)
+
+normTrain = predict(preproc, limitedTrain)
+mean(normTrain$ReturnJan)
+normTest = predict(preproc, limitedTest)
+mean(normTest$ReturnJan)
+
+```
+
+What is the mean of the ReturnJan variable in normTrain?
+
+**Answer:**2.100586e-17
+
+What is the mean of the ReturnJan variable in normTest?
+
+**Answer:**-0.0004185886
+
+#Problem 3.3 - Clustering Stocks
+Why is the mean ReturnJan variable much closer to 0 in normTrain than in normTest?
+
+**Answer:** The distribution of the ReturnJan variable is different in the training and testing set  
+
+#Problem 3.4 - Clustering Stocks
+Set the random seed to 144 (it is important to do this again, even though we did it earlier). Run k-means clustering with 3 clusters on normTrain, storing the result in an object called km.
+
+```{r}
+set.seed(144)
+km <- kmeans(normTrain, centers = 3)
+str(km)
+km$cluster
+```
+
+Which cluster has the largest number of observations?
+
+**Answer: **  Cluster 2 
+
+#Problem 3.5 - Clustering Stocks
+Recall from the recitation that we can use the flexclust package to obtain training set and testing set cluster assignments for our observations (note that the call to as.kcca may take a while to complete):
+
+```{r}
+library(flexclust)
+kccaCluster <- as.kcca(km, normTrain)
+testPred <- predict(kccaCluster, newdata = normTest)
+table(testPred)
+```
+
+How many test-set observations were assigned to Cluster 2?
+
+**Answer:**2080
+
+#Problem 4.1 - Cluster-Specific Predictions
+Using the subset function, build data frames stocksTrain1, stocksTrain2, and stocksTrain3, containing the elements in the stocksTrain data frame assigned to clusters 1, 2, and 3, respectively (be careful to take subsets of stocksTrain, not of normTrain). Similarly build stocksTest1, stocksTest2, and stocksTest3 from the stocksTest data frame.
+
+```{r}
+stockTrain1 <- subset(stocksTrain, km$cluster == 1)
+stockTrain2 <- subset(stocksTrain, km$cluster == 2)
+stockTrain3 <- subset(stocksTrain, km$cluster == 3)
+stockTest1   <- subset(stocksTest, testPred == 1 )
+stockTest2   <- subset(stocksTest, testPred == 2 )
+stockTest3   <- subset(stocksTest, testPred == 3 )
+```
+
+Which training set data frame has the highest average value of the dependent variable?
+
+```{r}
+mean(stockTrain1$PositiveDec)
+mean(stockTrain2$PositiveDec)
+mean(stockTrain3$PositiveDec)
+
+```
+
+**Answer: stocksTrain1 **
+
+#Problem 4.2 - Cluster-Specific Predictions
+Build logistic regression models StocksModel1, StocksModel2, and StocksModel3, which predict PositiveDec using all the other variables as independent variables. StocksModel1 should be trained on stocksTrain1, StocksModel2 should be trained on stocksTrain2, and StocksModel3 should be trained on stocksTrain3.
+
+```{r}
+StocksModel1 <- glm(PositiveDec~., data = stockTrain1, family = binomial)
+StocksModel2 <- glm(PositiveDec~., data = stockTrain2, family = binomial)
+StocksModel3 <- glm(PositiveDec~., data = stockTrain3, family = binomial)
+```
+
+Which variables have a positive sign for the coefficient in at least one of StocksModel1, StocksModel2, and StocksModel3 and a negative sign for the coefficient in at least one of StocksModel1, StocksModel2, and StocksModel3? Select all that apply.
+
+```{r echo=FALSE, warning=FALSE, error=FALSE,message=FALSE}
+options(width = 200)
+round(StocksModel1$coefficients,2)
+round(StocksModel2$coefficients,2)
+round(StocksModel3$coefficients,2)
+
+```
+**Answer:** ReturnJan  ReturnFeb  ReturnMar     ReturnJune    ReturnAug    ReturnOct  
+
+#Problem 4.3 - Cluster-Specific Predictions
+Using StocksModel1, make test-set predictions called PredictTest1 on the data frame stocksTest1. Using StocksModel2, make test-set predictions called PredictTest2 on the data frame stocksTest2. Using StocksModel3, make test-set predictions called PredictTest3 on the data frame stocksTest3.
+
+What is the overall accuracy of StocksModel1 on the test set stocksTest1, using a threshold of 0.5?
+
+```{r}
+library(flexclust)
+
+PredictTest1 <- predict(StocksModel1,newdata = stockTest1, type="response")
+PredictTest2 <- predict(StocksModel2,newdata = stockTest2, type="response")
+PredictTest3 <- predict(StocksModel3,newdata = stockTest3, type="response")
+
+table(stockTest1$PositiveDec, PredictTest1 >= 0.5)
+(30+774)/( 30 + 471 +23 + 774)
+
+```
+**Answer:**0.6194145
+
+What is the overall accuracy of StocksModel2 on the test set stocksTest2, using a threshold of 0.5?
+
+```{r}
+table(stockTest2$PositiveDec, PredictTest2 >= 0.5)
+(388 + 757) / (388+626+309+757)
+```
+
+**Answer:** 0.5504808
+
+
+What is the overall accuracy of StocksModel3 on the test set stocksTest3, using a threshold of 0.5?
+
+```{r}
+table(stockTest3$PositiveDec, PredictTest3 >= 0.5)
+(49+13)/(49+13+13+21)
+```
+
+**Answer:** 0.6458333
+
+#Problem 4.4 - Cluster-Specific Predictions
+To compute the overall test-set accuracy of the cluster-then-predict approach, we can combine all the test-set predictions into a single vector and all the true outcomes into a single vector:
+
+```{R}
+AllPredictions <- c(PredictTest1, PredictTest2, PredictTest3)
+str(AllPredictions)
+
+AllOutcomes <- c(stockTest1$PositiveDec, stockTest2$PositiveDec, stockTest3$PositiveDec)
+str(AllOutcomes)
+
+table(AllOutcomes, AllPredictions >= 0.5)
+(467+1544)/(467+1544+1110+353)
+```
+What is the overall test-set accuracy of the cluster-then-predict approach, again using a threshold of 0.5?
+
+**Answer:**
+
+We see a modest improvement over the original logistic regression model. Since predicting stock returns is a notoriously hard #Problem, this is a good increase in accuracy. By investing in stocks for which we are more confident that they will have positive returns (by selecting the ones with higher predicted probabilities), this cluster-then-predict model can give us an edge over the original logistic regression model.
